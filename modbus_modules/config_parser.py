@@ -93,13 +93,14 @@ POINT_ARRAY_FIELDS = [
 
 @dataclass
 class GroupConfig:
-    """一组 Modbus 读取配置"""
+    """一组 Modbus 配置"""
 
     name: str  # 组名称
     function_code: int  # 功能码 (03=读保持寄存器, 04=读输入寄存器, 16=写多寄存器)
     start_address: int  # 起始地址
     quantity: int  # 读取数量
     enabled: bool = True  # 是否启用该组
+    interval_ms: int = 1000  # 本组的轮询周期 (毫秒)
     points: list[PointConfig] = field(default_factory=list)  # 点位列表
 
 
@@ -190,6 +191,7 @@ def parse_config_dict(raw: dict) -> AppConfig:
             start_address=int(g.get("start_address", 0)),
             quantity=int(g.get("quantity", 1)),
             enabled=bool(g.get("enabled", True)),
+            interval_ms=int(g.get("interval_ms", 1000)),
         )
 
         # 校验功能码（轮循只支持读取命令 03/04，写命令 16 用于手动触发）

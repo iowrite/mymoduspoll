@@ -1,14 +1,6 @@
 {
   "serial": {
-    "baudrate": 9600,
-    "databits": 8,
-    "stopbits": "1",
-    "parity": "无"
-  },
-  "slave_id": 1,
-  "polling": {
-    "enabled": true,
-    "interval_ms": 500
+    "baudrate": 115200
   },
   "groups": [
     {
@@ -16,6 +8,7 @@
       "function_code": 3,
       "start_address": 0,
       "quantity": 4,
+      "interval_ms": 200,
       "points": [
         ["通道1温度", 0, true, 0.1, 0, "°C", 1, "int16", "1号传感器"],
         ["通道2温度", 1, true, 0.1, 0, "°C", 1, "int16", "2号传感器"],
@@ -28,6 +21,7 @@
       "function_code": 4,
       "start_address": 0,
       "quantity": 2,
+      "interval_ms": 500,
       "points": [
         ["电压L1", 0, false, 0.1, 0, "V", 1, "uint16", "L1-N 电压"],
         ["电压L2", 1, false, 0.1, 0, "V", 1, "uint16", "L2-N 电压"]
@@ -38,6 +32,7 @@
       "function_code": 16,
       "start_address": 200,
       "quantity": 2,
+      "interval_ms": 0,
       "points": [
         ["目标温度", 0, true, 1, 0, "°C", 0, "int16", "设定目标温度"],
         ["运行模式", 1, false, 1, 0, "", 0, "uint16", "0=停止 1=自动 2=手动"]

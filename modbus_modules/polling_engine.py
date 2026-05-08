@@ -139,7 +139,7 @@ class PollingEngine:
             self.on_status_change(False, "轮循已停止")
 
     def _poll_loop(self) -> None:
-        """轮循主循环"""
+        """轮循主循环，每个组使用各自的轮询周期"""
         config = self._config
         if not config:
             return
@@ -150,8 +150,6 @@ class PollingEngine:
         ]
         if not enabled_groups:
             return
-
-        interval = config.polling.interval_ms / 1000.0
 
         while self._running:
             group = enabled_groups[self._current_group_index]
@@ -167,17 +165,13 @@ class PollingEngine:
                 if self.on_poll_result:
                     self.on_poll_result(result)
 
+            # 使用本组的间隔等待
+            time.sleep(group.interval_ms / 1000.0)
+
             # 移动到下一个组
             self._current_group_index = (self._current_group_index + 1) % len(
                 enabled_groups
             )
-
-            # 如果是最后一组（一轮完成），等待完整间隔
-            if self._current_group_index == 0:
-                time.sleep(interval)
-            else:
-                # 组间小间隔，让响应有时间到达
-                time.sleep(min(interval / len(enabled_groups), 0.2))
 
     def _poll_group(
         self, group: GroupConfig, slave_id: int

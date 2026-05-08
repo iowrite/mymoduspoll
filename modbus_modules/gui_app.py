@@ -205,7 +205,7 @@ class ModbusMasterApp:
         self.read_btn = ttk.Button(
             frame,
             text="📖 读取",
-            command=self._read_write_group,
+            command=lambda: self._read_write_group(silent=False),
             width=8,
             state="disabled",
         )
@@ -484,10 +484,14 @@ class ModbusMasterApp:
 
     # ==================== 写入/读取操作 ====================
 
-    def _read_write_group(self):
-        """读取写组的当前值（使用 03 读保持寄存器）"""
+    def _read_write_group(self, silent=False):
+        """读取写组的当前值（使用 03 读保持寄存器）
+        Args:
+            silent: True=自动触发，串口未开时静默跳过；False=按钮点击，弹窗提示
+        """
         if not self.serial_mgr.is_open:
-            messagebox.showwarning("", "请先打开串口")
+            if not silent:
+                messagebox.showwarning("", "请先打开串口")
             return
         if not self.app_config or not self._current_write_group:
             return
@@ -649,8 +653,8 @@ class ModbusMasterApp:
                 self._current_write_group = group_name
                 self.write_btn.config(state="normal")
                 self.read_btn.config(state="normal")
-                # 自动读取当前值
-                self.root.after(100, self._read_write_group)
+                # 自动读取当前值（静默模式）
+                self.root.after(100, lambda: self._read_write_group(silent=True))
                 break
 
         self._set_msg(f"切换到组: {group_name}")

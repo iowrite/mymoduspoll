@@ -105,13 +105,12 @@ class GroupNavigator(ttk.Frame):
 
     def _insert_group_props(self, parent_id, group):
         """在组节点下插入属性子项"""
-        interval = self._config.polling.interval_ms if self._config else 1000
         props = [
             ("功能码", f"0x{group.function_code:02X}"),
             ("起始地址", str(group.start_address)),
             ("寄存器数", str(group.quantity)),
             ("点位数量", str(len(group.points))),
-            ("轮询周期", f"{interval}ms"),
+            ("轮询周期", f"{group.interval_ms}ms"),
         ]
         for label, value in props:
             child_id = f"{parent_id}_prop_{label}"
