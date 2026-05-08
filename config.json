@@ -8,7 +8,7 @@
   "slave_id": 1,
   "polling": {
     "enabled": true,
-    "interval_ms": 2000
+    "interval_ms": 500
   },
   "groups": [
     {

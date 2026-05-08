@@ -30,6 +30,7 @@ from modbus_modules.modbus_core import (
     add_crc,
     build_modbus_frame,
     bytes_to_hex_str,
+    convert_register_value,
     hex_str_to_bytes,
     parse_modbus_response,
 )
@@ -156,36 +157,6 @@ class ModbusMasterApp:
             ],
         ).pack(side=tk.LEFT)
 
-        ttk.Label(frame, text="数据位:").pack(side=tk.LEFT, padx=(8, 2))
-        self.data_var = tk.StringVar(value="8")
-        ttk.Combobox(
-            frame,
-            textvariable=self.data_var,
-            width=3,
-            state="readonly",
-            values=["5", "6", "7", "8"],
-        ).pack(side=tk.LEFT)
-
-        ttk.Label(frame, text="停止位:").pack(side=tk.LEFT, padx=(8, 2))
-        self.stop_var = tk.StringVar(value="1")
-        ttk.Combobox(
-            frame,
-            textvariable=self.stop_var,
-            width=3,
-            state="readonly",
-            values=["1", "1.5", "2"],
-        ).pack(side=tk.LEFT)
-
-        ttk.Label(frame, text="校验:").pack(side=tk.LEFT, padx=(8, 2))
-        self.parity_var = tk.StringVar(value="无")
-        ttk.Combobox(
-            frame,
-            textvariable=self.parity_var,
-            width=5,
-            state="readonly",
-            values=["无", "奇校验", "偶校验"],
-        ).pack(side=tk.LEFT)
-
         self.open_btn = ttk.Button(
             frame, text="打开串口", command=self.toggle_serial, width=10
         )
@@ -201,9 +172,6 @@ class ModbusMasterApp:
         ttk.Button(frame, text="📂 加载配置", command=self.load_config_dialog).pack(
             side=tk.LEFT
         )
-        ttk.Button(frame, text="🔄 重载", command=self.reload_config, width=5).pack(
-            side=tk.LEFT, padx=2
-        )
 
         self.config_lbl = ttk.Label(frame, text="未加载配置", foreground="gray")
         self.config_lbl.pack(side=tk.LEFT, padx=5)
@@ -214,12 +182,6 @@ class ModbusMasterApp:
         self.poll_slave_var = tk.StringVar(value="1")
         ttk.Entry(frame, textvariable=self.poll_slave_var, width=4).pack(
             side=tk.LEFT, padx=1
-        )
-
-        ttk.Label(frame, text="间隔(ms):").pack(side=tk.LEFT, padx=(8, 2))
-        self.poll_interval_var = tk.StringVar(value="1000")
-        ttk.Entry(frame, textvariable=self.poll_interval_var, width=6).pack(
-            side=tk.LEFT
         )
 
         self.start_btn = ttk.Button(
@@ -239,7 +201,15 @@ class ModbusMasterApp:
         )
         self.stats_lbl.pack(side=tk.LEFT, padx=5)
 
-        # 写入按钮
+        # 写入/读取按钮
+        self.read_btn = ttk.Button(
+            frame,
+            text="📖 读取",
+            command=self._read_write_group,
+            width=8,
+            state="disabled",
+        )
+        self.read_btn.pack(side=tk.RIGHT, padx=2)
         self.write_btn = ttk.Button(
             frame, text="✏ 写入", command=self._do_write, width=8, state="disabled"
         )
@@ -325,11 +295,6 @@ class ModbusMasterApp:
             self.serial_mgr.open(
                 port=port,
                 baudrate=int(self.baud_var.get()),
-                bytesize=int(self.data_var.get()),
-                stopbits={"1": 1, "1.5": 1.5, "2": 2}.get(self.stop_var.get(), 1),
-                parity={"无": "N", "奇校验": "O", "偶校验": "E"}.get(
-                    self.parity_var.get(), "N"
-                ),
                 timeout=0.5,
             )
             self._set_msg(f"串口 {port} 已打开")
@@ -370,10 +335,6 @@ class ModbusMasterApp:
         if path:
             self._load_config(path)
 
-    def reload_config(self):
-        if self.config_filepath:
-            self._load_config(self.config_filepath)
-
     def _load_config(self, filepath: str):
         try:
             config = load_config(filepath)
@@ -391,13 +352,9 @@ class ModbusMasterApp:
             self.config_lbl.config(text=f"✅ {name}", foreground="green")
             self.cfg_bar.config(text=f"配置: {name}", foreground="green")
 
-            # 同步串口参数
+            # 同步波特率
             self.baud_var.set(str(config.serial.baudrate))
-            self.data_var.set(str(config.serial.databits))
-            self.stop_var.set(config.serial.stopbits)
-            self.parity_var.set(config.serial.parity)
             self.poll_slave_var.set(str(config.slave_id))
-            self.poll_interval_var.set(str(config.polling.interval_ms))
 
             # 在表中显示协议格式
             self.data_table.load_from_config(config)
@@ -426,9 +383,8 @@ class ModbusMasterApp:
 
         try:
             self.app_config.slave_id = int(self.poll_slave_var.get())
-            self.app_config.polling.interval_ms = int(self.poll_interval_var.get())
         except ValueError:
-            messagebox.showerror("", "ID和间隔须为数字")
+            messagebox.showerror("", "从站ID须为数字")
             return
 
         self.polling_engine.load_config(self.app_config)
@@ -526,7 +482,97 @@ class ModbusMasterApp:
         self.data_monitor.show()
         self._set_msg("🔍 数据监控窗口已打开")
 
-    # ==================== 写入操作 ====================
+    # ==================== 写入/读取操作 ====================
+
+    def _read_write_group(self):
+        """读取写组的当前值（使用 03 读保持寄存器）"""
+        if not self.serial_mgr.is_open:
+            messagebox.showwarning("", "请先打开串口")
+            return
+        if not self.app_config or not self._current_write_group:
+            return
+        group = None
+        for g in self.app_config.groups:
+            if g.name == self._current_write_group:
+                group = g
+                break
+        if not group or group.function_code != 0x10:
+            return
+
+        def _do():
+            try:
+                slave_id = int(self.poll_slave_var.get())
+                frame = build_modbus_frame(
+                    slave_id, 0x03, [group.start_address, group.quantity]
+                )
+                frame = add_crc(frame)
+                hex_req = bytes_to_hex_str(frame)
+                self.root.after(
+                    0, lambda: self._set_msg(f"📖 读取 {group.name}: {hex_req}")
+                )
+
+                response = self._send_poll_request(frame)
+                if response is None:
+                    self.root.after(
+                        0, lambda: self._set_msg(f"⏱ 读取超时: {group.name}")
+                    )
+                    return
+
+                parsed = parse_modbus_response(response)
+                if "error" in parsed:
+                    self.root.after(
+                        0, lambda: self._set_msg(f"❌ 读取错误: {parsed['error']}")
+                    )
+                    return
+
+                registers = parsed.get("registers", [])
+                for point in group.points:
+                    if point.register_index >= len(registers):
+                        continue
+                    raw_val = registers[point.register_index]
+                    converted = convert_register_value(
+                        raw_val,
+                        signed=point.signed,
+                        scale=point.scale,
+                        offset=point.offset,
+                    )
+                    if isinstance(converted, float):
+                        display = (
+                            f"{converted:.{point.decimals}f}"
+                            if point.decimals
+                            else f"{converted:.1f}"
+                        )
+                    else:
+                        display = str(converted)
+                    raw_hex = f"0x{raw_val:04X}"
+                    self.root.after(
+                        0,
+                        lambda pn=point.name, d=display, rh=raw_hex: (
+                            self._update_write_row_from_read(pn, d, rh)
+                        ),
+                    )
+
+                self.root.after(0, lambda: self._set_msg(f"✅ 读取完成: {group.name}"))
+            except Exception as e:
+                self.root.after(0, lambda: self._set_msg(f"❌ 读取异常: {e}"))
+
+        threading.Thread(target=_do, daemon=True).start()
+
+    def _update_write_row_from_read(
+        self, point_name: str, display_val: str, raw_hex: str
+    ):
+        """用读取到的值更新数据表的写点位（不覆盖用户已编辑的）"""
+        item_id = f"point_{point_name}"
+        if not self.data_table.tree.exists(item_id):
+            return
+        cur = list(self.data_table.tree.item(item_id, "values"))
+        if len(cur) < 10:
+            return
+        cur[7] = raw_hex  # raw_value column
+        # 只在用户尚未编辑时更新转换值
+        if cur[8] in ("---", "等待", "双击编辑", ""):
+            cur[8] = display_val
+        self.data_table.tree.item(item_id, values=tuple(cur))
 
     def _do_write(self):
         """执行写入：从数据表读取编辑的值，构建 0x10 帧发送"""
@@ -597,10 +643,14 @@ class ModbusMasterApp:
         # 检查是否是写组
         self._current_write_group = None
         self.write_btn.config(state="disabled")
+        self.read_btn.config(state="disabled")
         for g in self.app_config.groups:
             if g.name == group_name and g.function_code == 0x10:
                 self._current_write_group = group_name
                 self.write_btn.config(state="normal")
+                self.read_btn.config(state="normal")
+                # 自动读取当前值
+                self.root.after(100, self._read_write_group)
                 break
 
         self._set_msg(f"切换到组: {group_name}")
