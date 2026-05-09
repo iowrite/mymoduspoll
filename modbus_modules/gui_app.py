@@ -59,10 +59,14 @@ class ModbusMasterApp:
         self.polling_engine.on_status_change = self._on_polling_status_change
         self.polling_engine.send_request = self._send_poll_request
 
-        # 同步锁
+        # 同步锁（用于轮询）
         self._sync_response: Optional[bytes] = None
         self._sync_event = threading.Event()
         self._sync_lock = threading.Lock()
+
+        # 同步锁（用于手动读取，与轮询隔离）
+        self._manual_response: Optional[bytes] = None
+        self._manual_event = threading.Event()
 
         # 写组状态
         self._current_write_group: Optional[str] = None
@@ -89,7 +93,7 @@ class ModbusMasterApp:
         content.pack(fill=tk.BOTH, expand=True, pady=(3, 3))
 
         # 左侧组导航
-        nav_frame = ttk.Frame(content, width=240)
+        nav_frame = ttk.Frame(content, width=300)
         nav_frame.pack(side=tk.LEFT, fill=tk.Y)
         nav_frame.pack_propagate(False)
         self.group_nav = GroupNavigator(nav_frame)
@@ -127,28 +131,8 @@ class ModbusMasterApp:
             frame, textvariable=self.port_var, width=35, state="readonly"
         )
         self.port_combo.pack(side=tk.LEFT, padx=2)
-        ttk.Button(frame, text="刷新", command=self.refresh_ports, width=5).pack(
-            side=tk.LEFT
-        )
-
-        ttk.Label(frame, text="波特率:").pack(side=tk.LEFT, padx=(10, 2))
-        self.baud_var = tk.StringVar(value="9600")
-        ttk.Combobox(
-            frame,
-            textvariable=self.baud_var,
-            width=7,
-            state="readonly",
-            values=[
-                "1200",
-                "2400",
-                "4800",
-                "9600",
-                "19200",
-                "38400",
-                "57600",
-                "115200",
-            ],
-        ).pack(side=tk.LEFT)
+        # 点击下拉时自动刷新串口列表
+        self.port_combo.bind("<ButtonPress-1>", lambda e: self.refresh_ports())
 
         self.open_btn = ttk.Button(
             frame, text="打开串口", command=self.toggle_serial, width=10
@@ -237,6 +221,7 @@ class ModbusMasterApp:
     def refresh_ports(self):
         ports = self.serial_mgr.refresh_port_list()
         self.port_combo["values"] = ports
+        self._set_msg(f"🔍 串口已刷新, 检测到 {len(ports)} 个端口")
         if ports and not self.port_var.get():
             self.port_var.set(ports[0])
 
@@ -253,9 +238,10 @@ class ModbusMasterApp:
             return
         port = self.serial_mgr.parse_port_name(dsp)
         try:
+            baudrate = self.app_config.serial.baudrate if self.app_config else 9600
             self.serial_mgr.open(
                 port=port,
-                baudrate=int(self.baud_var.get()),
+                baudrate=baudrate,
                 timeout=0.5,
             )
             self._set_msg(f"串口 {port} 已打开")
@@ -268,9 +254,12 @@ class ModbusMasterApp:
         self._update_ui_state()
 
     def _on_serial_received(self, frame: bytes, parsed: dict):
+        # 同时唤醒轮询和手动读取
         with self._sync_lock:
             self._sync_response = frame
             self._sync_event.set()
+            self._manual_response = frame
+            self._manual_event.set()
 
     def _on_serial_error(self, msg: str):
         self._set_msg(f"串口错误: {msg}")
@@ -314,9 +303,22 @@ class ModbusMasterApp:
             self.config_lbl.config(text=f"✅ {name}", foreground="green")
             self.cfg_bar.config(text=f"配置: {name}", foreground="green")
 
-            # 同步波特率
-            self.baud_var.set(str(config.serial.baudrate))
             self.poll_slave_var.set(str(config.slave_id))
+
+            # 如果串口已打开，用配置中的波特率重开
+            if self.serial_mgr.is_open:
+                port = self.serial_mgr.ser.port if self.serial_mgr.ser else ""
+                self.serial_mgr.close()
+                if port:
+                    try:
+                        self.serial_mgr.open(
+                            port=port,
+                            baudrate=config.serial.baudrate,
+                            timeout=0.5,
+                        )
+                        self._set_msg(f"串口已用 {config.serial.baudrate} 波特率重开")
+                    except Exception as e:
+                        self._set_msg(f"串口重开失败: {e}")
 
             # 添加到导航树
             self.group_nav.add_config(filepath, config)
@@ -453,7 +455,16 @@ class ModbusMasterApp:
                     0, lambda: self._set_msg(f"📖 读取 {group.name}: {hex_req}")
                 )
 
-                response = self._send_poll_request(frame)
+                # 使用独立于轮询的事件，避免冲突
+                self._manual_event.clear()
+                self._manual_response = None
+                if not self.serial_mgr.send(frame):
+                    self.root.after(0, lambda: self._set_msg("❌ 发送失败"))
+                    return
+                response = None
+                if self._manual_event.wait(timeout=1.0):
+                    response = self._manual_response
+                    self._manual_response = None
                 if response is None:
                     self.root.after(
                         0, lambda: self._set_msg(f"⏱ 读取超时: {group.name}")
@@ -587,6 +598,22 @@ class ModbusMasterApp:
         self.config_lbl.config(text=f"✅ {name}", foreground="green")
         self.cfg_bar.config(text=f"配置: {name}", foreground="green")
         self.poll_slave_var.set(str(config.slave_id))
+
+        # 切换到不同配置时，同步波特率
+        if self.serial_mgr.is_open and self.serial_mgr.ser:
+            current_baud = self.serial_mgr.ser.baudrate
+            if current_baud != config.serial.baudrate:
+                port = self.serial_mgr.ser.port
+                self.serial_mgr.close()
+                try:
+                    self.serial_mgr.open(
+                        port=port,
+                        baudrate=config.serial.baudrate,
+                        timeout=0.5,
+                    )
+                    self._set_msg(f"波特率切换为 {config.serial.baudrate}")
+                except Exception as e:
+                    self._set_msg(f"波特率切换失败: {e}")
 
         self.data_table.show_group(config, group_name)
 

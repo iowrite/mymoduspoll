@@ -24,6 +24,7 @@ class SerialManager:
         self._running = False
         self._read_thread: Optional[threading.Thread] = None
         self._lock = threading.Lock()
+        self._read_buffer = b""  # 串口接收缓冲区
 
         # 回调
         self.on_send: Optional[Callable[[bytes], None]] = None
@@ -85,11 +86,15 @@ class SerialManager:
             self.on_status_change(False)
 
     def send(self, data: bytes) -> bool:
-        """发送数据"""
+        """发送数据（发送前清空接收缓冲区，避免旧数据干扰）"""
         if not self.is_open:
             return False
         with self._lock:
             try:
+                # 清空串口硬件缓冲和软件缓冲
+                if self.ser and self.ser.is_open:
+                    self.ser.reset_input_buffer()
+                self._read_buffer = b""
                 self.ser.write(data)
                 if self.on_send:
                     self.on_send(data)
@@ -101,17 +106,16 @@ class SerialManager:
 
     def _read_loop(self) -> None:
         """后台读取线程"""
-        buffer = b""
         while self._running:
             try:
                 ser = self.ser
                 if ser and ser.is_open and ser.in_waiting:
                     data = ser.read(ser.in_waiting)
                     if data:
-                        buffer += data
+                        self._read_buffer += data
                         # 尝试提取完整帧
-                        while len(buffer) >= 4:
-                            resp = parse_modbus_response(buffer)
+                        while len(self._read_buffer) >= 4:
+                            resp = parse_modbus_response(self._read_buffer)
                             if (
                                 "error" not in resp
                                 or resp["error"] == "帧太短 (< 4 bytes)"
@@ -119,24 +123,26 @@ class SerialManager:
                                 if "error" not in resp:
                                     # 有效帧
                                     if self.on_received:
-                                        frame_bytes = buffer[: len(buffer)]
+                                        frame_bytes = self._read_buffer[
+                                            : len(self._read_buffer)
+                                        ]
                                         self.on_received(frame_bytes, resp)
-                                    buffer = b""
+                                    self._read_buffer = b""
                                     break
                                 else:
                                     # 帧太短，等更多数据
                                     break
                             else:
-                                if len(buffer) > 256:
-                                    buffer = buffer[1:]
+                                if len(self._read_buffer) > 256:
+                                    self._read_buffer = self._read_buffer[1:]
                                 else:
                                     break
                 else:
-                    time.sleep(0.05)
+                    time.sleep(0.01)
             except Exception as e:
                 if self._running and self.on_error:
                     self.on_error(f"读取异常: {e}")
-                time.sleep(0.1)
+                time.sleep(0.01)
 
     def refresh_port_list(self) -> list[str]:
         """刷新可用串口列表"""

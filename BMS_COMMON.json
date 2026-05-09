@@ -2,14 +2,14 @@
   "serial": {
     "baudrate": 115200
   },
-  "slave_id": 1,
+  "slave_id": 0,
   "groups": [
     {
       "name": "BMS基础数据",
       "function_code": 4,
       "start_address": 0,
       "quantity": 75,
-      "interval_ms": 1000,
+      "interval_ms": 500,
       "points": [
         ["心跳", 0, 1, 0, "/", 0, "uint16", "1s一次"],
         ["RTC时间年", 1, 1, 0, "年", 0, "uint16", ""],
