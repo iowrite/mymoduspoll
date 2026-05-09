@@ -118,7 +118,6 @@ class ModbusMasterApp:
         fm = tk.Menu(menubar, tearoff=0)
         menubar.add_cascade(label="文件", menu=fm)
         fm.add_command(label="加载配置", command=self.load_config_dialog)
-        fm.add_command(label="导出CSV", command=self.export_data)
         fm.add_command(label="🔍 数据监控", command=self.open_data_monitor)
         fm.add_separator()
         fm.add_command(label="退出", command=self.on_closing)
@@ -214,13 +213,6 @@ class ModbusMasterApp:
             frame, text="✏ 写入", command=self._do_write, width=8, state="disabled"
         )
         self.write_btn.pack(side=tk.RIGHT, padx=2)
-
-        ttk.Button(frame, text="🗑 清表", command=self.clear_data_table, width=6).pack(
-            side=tk.RIGHT, padx=2
-        )
-        ttk.Button(frame, text="💾 CSV", command=self.export_data, width=6).pack(
-            side=tk.RIGHT
-        )
 
     def _build_bottom_row(self, parent):
         """底部：Hex 命令 + 日志"""
@@ -398,46 +390,6 @@ class ModbusMasterApp:
         self.polling_engine.stop()
         self._set_msg("⏹ 轮循已停止")
         self._update_ui_state()
-
-    def clear_data_table(self):
-        self.data_table.clear_all()
-        if self.app_config:
-            self.data_table.load_from_config(self.app_config)
-        self._set_msg("表格已重置")
-
-    def export_data(self):
-        vals = self.data_table.get_all_values()
-        if not vals:
-            messagebox.showinfo("", "没有数据")
-            return
-        path = filedialog.asksaveasfilename(
-            defaultextension=".csv",
-            filetypes=[("CSV", "*.csv")],
-        )
-        if not path:
-            return
-        try:
-            import csv
-
-            with open(path, "w", newline="", encoding="utf-8-sig") as f:
-                w = csv.writer(f)
-                w.writerow(["组名", "点位", "原始值", "转换值", "单位", "状态"])
-                for p in vals.values():
-                    w.writerow(
-                        [
-                            p.group_name,
-                            p.name,
-                            p.hex_str,
-                            str(p.converted_value)
-                            if p.converted_value is not None
-                            else "---",
-                            p.unit,
-                            p.quality,
-                        ]
-                    )
-            self._set_msg(f"💾 已导出: {path}")
-        except Exception as e:
-            messagebox.showerror("", f"导出失败: {e}")
 
     # ---------- 轮循回调 ----------
 
