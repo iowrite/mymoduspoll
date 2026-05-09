@@ -9,17 +9,13 @@ from __future__ import annotations
 import datetime
 import os
 import threading
-import time
 import tkinter as tk
-import tkinter.scrolledtext as scrolledtext
 from tkinter import filedialog, messagebox, ttk
 from typing import Optional
 
 from modbus_modules.config_parser import (
     AppConfig,
-    generate_example_config,
     load_config,
-    parse_config_dict,
     validate_config,
 )
 from modbus_modules.data_monitor import DataMonitor
@@ -499,8 +495,8 @@ class ModbusMasterApp:
                     )
 
                 self.root.after(0, lambda: self._set_msg(f"✅ 读取完成: {group.name}"))
-            except Exception as e:
-                self.root.after(0, lambda: self._set_msg(f"❌ 读取异常: {e}"))
+            except Exception as ex:
+                self.root.after(0, lambda e=ex: self._set_msg(f"❌ 读取异常: {e}"))
 
         threading.Thread(target=_do, daemon=True).start()
 

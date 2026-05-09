@@ -12,7 +12,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Callable, Optional
 
-from modbus_modules.config_parser import AppConfig, GroupConfig, PointConfig
+from modbus_modules.config_parser import AppConfig, GroupConfig
 from modbus_modules.modbus_core import (
     add_crc,
     build_modbus_frame,

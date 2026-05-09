@@ -121,20 +121,20 @@ class DataTable(ttk.Frame):
             height=18,
         )
         self._column_config = [
-            ("name", "点位名称", 140, tk.W),
-            ("address", "地址", 80, tk.CENTER),
-            ("data_type", "数据类型", 78, tk.CENTER),
-            ("scale", "倍率", 58, tk.CENTER),
-            ("offset", "偏移", 58, tk.CENTER),
-            ("unit", "单位", 48, tk.CENTER),
-            ("description", "说明", 120, tk.W),
-            ("raw_value", "原始值", 120, tk.CENTER),
-            ("value", "转换值", 130, tk.E),
-            ("quality", "状态", 68, tk.CENTER),
+            ("name", "点位名称", 140, "w"),
+            ("address", "地址", 80, "center"),
+            ("data_type", "数据类型", 78, "center"),
+            ("scale", "倍率", 58, "center"),
+            ("offset", "偏移", 58, "center"),
+            ("unit", "单位", 48, "center"),
+            ("description", "说明", 120, "w"),
+            ("raw_value", "原始值", 120, "center"),
+            ("value", "转换值", 130, "e"),
+            ("quality", "状态", 68, "center"),
         ]
         for col_id, title, width, anchor in self._column_config:
             self.tree.heading(col_id, text=title)
-            self.tree.column(col_id, width=width, anchor=anchor, minwidth=40)
+            self.tree.column(col_id, width=width, anchor=anchor, minwidth=40)  # type: ignore[arg-type]
             self._column_visible[col_id] = True
 
         vbar = ttk.Scrollbar(self, orient=tk.VERTICAL, command=self.tree.yview)
