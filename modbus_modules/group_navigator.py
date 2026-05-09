@@ -45,11 +45,12 @@ class GroupNavigator(ttk.Frame):
             selectmode="browse",
             height=12,
         )
-        self.tree.pack(fill=tk.BOTH, expand=True, padx=2)
 
         # 滚动条
         vbar = ttk.Scrollbar(self, orient=tk.VERTICAL, command=self.tree.yview)
+        # 先 pack 滚动条占据右侧，再 pack 树填充剩余空间
         vbar.pack(side=tk.RIGHT, fill=tk.Y)
+        self.tree.pack(fill=tk.BOTH, expand=True, padx=2)
         self.tree.configure(yscrollcommand=vbar.set)
 
         # 样式

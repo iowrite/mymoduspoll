@@ -26,12 +26,10 @@ from modbus_modules.data_monitor import DataMonitor
 from modbus_modules.data_table import DataTable
 from modbus_modules.group_navigator import GroupNavigator
 from modbus_modules.modbus_core import (
-    MODBUS_FUNCTIONS,
     add_crc,
     build_modbus_frame,
     bytes_to_hex_str,
     convert_register_value,
-    hex_str_to_bytes,
     parse_modbus_response,
 )
 from modbus_modules.polling_engine import GroupPollResult, PollingEngine
@@ -214,32 +212,10 @@ class ModbusMasterApp:
         self.write_btn.pack(side=tk.RIGHT, padx=2)
 
     def _build_bottom_row(self, parent):
-        """底部：Hex 命令 + 日志"""
-        frame = ttk.Frame(parent)
-        frame.pack(fill=tk.X, side=tk.BOTTOM)
-
-        # 第1小行：Hex 命令
-        hex_frame = ttk.Frame(frame)
-        hex_frame.pack(fill=tk.X)
-        ttk.Label(hex_frame, text="Hex:").pack(side=tk.LEFT)
-        self.hex_var = tk.StringVar()
-        ttk.Entry(hex_frame, textvariable=self.hex_var, width=50).pack(
-            side=tk.LEFT, padx=2, fill=tk.X, expand=True
-        )
-        ttk.Button(hex_frame, text="发送", command=self.send_hex_command, width=6).pack(
-            side=tk.LEFT, padx=1
-        )
-        ttk.Button(hex_frame, text="+CRC", command=self.auto_add_crc, width=6).pack(
-            side=tk.LEFT
-        )
-        ttk.Button(hex_frame, text="解析", command=self.parse_clipboard, width=6).pack(
-            side=tk.LEFT, padx=1
-        )
-
-        # 第2小行：状态日志（单行）
+        """底部：状态日志"""
         self.msg_var = tk.StringVar(value="就绪")
         ttk.Label(
-            frame, textvariable=self.msg_var, foreground="gray", font=("Consolas", 9)
+            parent, textvariable=self.msg_var, foreground="gray", font=("Consolas", 9)
         ).pack(side=tk.BOTTOM, fill=tk.X, pady=(1, 0), anchor=tk.W)
 
     def _build_status_bar(self):
@@ -594,7 +570,6 @@ class ModbusMasterApp:
             hex_str = bytes_to_hex_str(frame)
             self.serial_mgr.send(frame)
             self._set_msg(f"✏ 写入 {group.name}: {hex_str}")
-            self.hex_var.set(hex_str)
             self.data_table.clear_write_tags()
         except Exception as e:
             messagebox.showerror("", f"写入失败: {e}")
@@ -638,68 +613,11 @@ class ModbusMasterApp:
 
         self._update_ui_state()
 
-    # ==================== 手动 Hex 命令 ====================
-
-    def send_hex_command(self):
-        s = self.hex_var.get().strip()
-        if not s:
-            return
-        if not self.serial_mgr.is_open:
-            messagebox.showwarning("", "请先打开串口")
-            return
-        try:
-            frame = hex_str_to_bytes(s)
-            if frame:
-                self.serial_mgr.send(frame)
-                self._set_msg(f"TX → {bytes_to_hex_str(frame)}")
-        except Exception as e:
-            self._set_msg(f"格式错误: {e}")
-
-    def auto_add_crc(self):
-        s = self.hex_var.get().strip()
-        if not s:
-            return
-        try:
-            data = hex_str_to_bytes(s)
-            frame = add_crc(data)
-            self.hex_var.set(bytes_to_hex_str(frame))
-        except Exception as e:
-            self._set_msg(f"CRC失败: {e}")
-
-    def parse_clipboard(self):
-        try:
-            clip = self.root.clipboard_get().strip()
-            data = hex_str_to_bytes(clip)
-            if len(data) < 4:
-                self._set_msg("数据太短")
-                return
-            resp = parse_modbus_response(data)
-            self._show_parse_result(resp)
-            self.hex_var.set(bytes_to_hex_str(data))
-        except Exception as e:
-            self._set_msg(f"解析失败: {e}")
-
     # ==================== 工具 ====================
 
     def _set_msg(self, text: str):
         ts = datetime.datetime.now().strftime("%H:%M:%S")
         self.msg_var.set(f"[{ts}] {text}")
-
-    def _show_parse_result(self, result: dict):
-        """弹窗显示解析结果"""
-        if "error" in result:
-            messagebox.showinfo("解析结果", f"⚠ 错误: {result['error']}")
-            return
-        lines = [
-            f"从站: {result['slave_id']}",
-            f"功能码: 0x{result['function']:02X}",
-        ]
-        if "registers" in result:
-            regs = result["registers"]
-            lines.append(f"寄存器 ({len(regs)}个):")
-            for i, v in enumerate(regs):
-                lines.append(f"  [{i}] 0x{v:04X} ({v})")
-        messagebox.showinfo("解析结果", "\n".join(lines))
 
     def _update_ui_state(self):
         is_open = self.serial_mgr.is_open
