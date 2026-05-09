@@ -10,6 +10,8 @@ import threading
 import time
 from typing import Callable, Optional
 
+import serial
+
 from modbus_modules.modbus_core import parse_modbus_response
 
 
@@ -46,13 +48,11 @@ class SerialManager:
         timeout: float = 0.5,
     ) -> None:
         """打开串口"""
-        import serial as _serial
-
         if self.is_open:
             self.close()
 
         try:
-            self.ser = _serial.Serial(
+            self.ser = serial.Serial(
                 port=port,
                 baudrate=baudrate,
                 bytesize=bytesize,
@@ -67,7 +67,7 @@ class SerialManager:
             if self.on_status_change:
                 self.on_status_change(True)
 
-        except Exception as e:
+        except Exception:
             self.ser = None
             raise
 
@@ -95,7 +95,8 @@ class SerialManager:
                 if self.ser and self.ser.is_open:
                     self.ser.reset_input_buffer()
                 self._read_buffer = b""
-                self.ser.write(data)
+                if self.ser:
+                    self.ser.write(data)
                 if self.on_send:
                     self.on_send(data)
                 return True
@@ -146,9 +147,9 @@ class SerialManager:
 
     def refresh_port_list(self) -> list[str]:
         """刷新可用串口列表"""
-        import serial.tools.list_ports
+        import serial.tools.list_ports  # type: ignore[import-untyped]
 
-        ports = serial.tools.list_ports.comports()
+        ports = serial.tools.list_ports.comports()  # type: ignore[attr-defined]
         return [f"{p.device} - {p.description}" for p in ports]
 
     def parse_port_name(self, display: str) -> str:

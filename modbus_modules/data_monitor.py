@@ -277,6 +277,8 @@ class DataMonitor:
         return "break"
 
     def _copy_selection(self):
+        if not self._window:
+            return
         try:
             sel = self._text.get(tk.SEL_FIRST, tk.SEL_LAST)
             self._window.clipboard_clear()

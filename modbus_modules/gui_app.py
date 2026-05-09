@@ -603,8 +603,11 @@ class ModbusMasterApp:
         if self.serial_mgr.is_open and self.serial_mgr.ser:
             current_baud = self.serial_mgr.ser.baudrate
             if current_baud != config.serial.baudrate:
-                port = self.serial_mgr.ser.port
+                port = self.serial_mgr.ser.port or ""
                 self.serial_mgr.close()
+                if not port:
+                    self._set_msg("无法获取串口名称")
+                    return
                 try:
                     self.serial_mgr.open(
                         port=port,
