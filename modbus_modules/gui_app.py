@@ -49,6 +49,7 @@ class ModbusMasterApp:
         self.serial_mgr = SerialManager()
         self.polling_engine = PollingEngine()
         self.app_config: Optional[AppConfig] = None
+        self.app_configs: dict[str, AppConfig] = {}
         self.config_filepath: str = ""
 
         # 数据监控窗口
@@ -308,9 +309,10 @@ class ModbusMasterApp:
             ):
                 return
 
+            # 保存配置
+            self.app_configs[filepath] = config
             self.app_config = config
             self.config_filepath = filepath
-            self.polling_engine.load_config(config)
 
             name = os.path.basename(filepath)
             self.config_lbl.config(text=f"✅ {name}", foreground="green")
@@ -320,10 +322,8 @@ class ModbusMasterApp:
             self.baud_var.set(str(config.serial.baudrate))
             self.poll_slave_var.set(str(config.slave_id))
 
-            # 在表中显示协议格式
-            self.data_table.load_from_config(config)
-            # 填充组导航
-            self.group_nav.load_groups(config)
+            # 添加到导航树
+            self.group_nav.add_config(filepath, config)
             self.group_nav.select_first()
 
             total_points = sum(len(g.points) for g in config.groups)
@@ -354,19 +354,22 @@ class ModbusMasterApp:
         # 获取当前选中的组，只轮循该组
         selected = self.group_nav.get_selected()
         if selected:
+            sel_path, sel_group = selected
+            config = self.app_configs.get(sel_path, self.app_config)
+            target = sel_group
             # 检查是否是读组（03/04），写组不能轮循
-            for g in self.app_config.groups:
-                if g.name == selected and g.function_code not in (0x03, 0x04):
+            for g in config.groups:
+                if g.name == sel_group and g.function_code not in (0x03, 0x04):
                     messagebox.showwarning(
                         "",
-                        f"组 '{selected}' 不是读组（FC=0x{g.function_code:02X}），无法轮循",
+                        f"组 '{sel_group}' 不是读组（FC=0x{g.function_code:02X}），无法轮循",
                     )
                     return
-            target = selected
+            self.polling_engine.load_config(config)
         else:
             target = None
+            self.polling_engine.load_config(self.app_config)
 
-        self.polling_engine.load_config(self.app_config)
         if self.polling_engine.start(target_group=target):
             self._set_msg(f"▶ 轮循已启动: {target or '全部读组'}")
             self._update_ui_state()
@@ -490,8 +493,8 @@ class ModbusMasterApp:
                     raw_hex = f"0x{raw_val:04X}"
                     self.root.after(
                         0,
-                        lambda pn=point.name, d=display, rh=raw_hex: (
-                            self._update_write_row_from_read(pn, d, rh)
+                        lambda pn=point.name, ri=point.register_index, d=display, rh=raw_hex: (
+                            self._update_write_row_from_read(pn, ri, d, rh)
                         ),
                     )
 
@@ -502,10 +505,10 @@ class ModbusMasterApp:
         threading.Thread(target=_do, daemon=True).start()
 
     def _update_write_row_from_read(
-        self, point_name: str, display_val: str, raw_hex: str
+        self, point_name: str, register_index: int, display_val: str, raw_hex: str
     ):
         """用读取到的值更新数据表的写点位（不覆盖用户已编辑的）"""
-        item_id = f"point_{point_name}"
+        item_id = f"point_{point_name}_{register_index}"
         if not self.data_table.tree.exists(item_id):
             return
         cur = list(self.data_table.tree.item(item_id, "values"))
@@ -576,15 +579,24 @@ class ModbusMasterApp:
 
     # ==================== 组导航回调 ====================
 
-    def _on_group_selected(self, group_name: str):
+    def _on_group_selected(self, filepath: str, group_name: str):
         """组导航选中某组时，更新数据表"""
-        if not self.app_config:
+        config = self.app_configs.get(filepath)
+        if not config:
             return
-        self.data_table.show_group(self.app_config, group_name)
+        # 切换到该配置
+        self.app_config = config
+        self.config_filepath = filepath
+        name = os.path.basename(filepath)
+        self.config_lbl.config(text=f"✅ {name}", foreground="green")
+        self.cfg_bar.config(text=f"配置: {name}", foreground="green")
+        self.poll_slave_var.set(str(config.slave_id))
+
+        self.data_table.show_group(config, group_name)
 
         # 查找该组配置
         selected_group = None
-        for g in self.app_config.groups:
+        for g in config.groups:
             if g.name == group_name:
                 selected_group = g
                 break

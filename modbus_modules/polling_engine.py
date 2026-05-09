@@ -31,6 +31,7 @@ class PointValue:
     unit: str
     quality: str  # "good", "error", "timeout", "alarm"
     group_name: str
+    register_index: int = 0
     timestamp: str = ""
     hex_str: str = ""
 
@@ -324,6 +325,7 @@ class PollingEngine:
                     unit=point.unit,
                     quality=quality,
                     group_name=group.name,
+                    register_index=point.register_index,
                     timestamp="",
                     hex_str=hex_str,
                 )

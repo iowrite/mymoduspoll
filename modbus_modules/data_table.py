@@ -370,7 +370,7 @@ class DataTable(ttk.Frame):
             self.tree.insert(
                 "",
                 tk.END,
-                iid=f"point_{point.name}",
+                iid=f"point_{point.name}_{idx}",
                 values=(
                     point.name,
                     str(group.start_address + idx),
@@ -394,7 +394,7 @@ class DataTable(ttk.Frame):
             self._update_row(point)
 
     def _update_row(self, point: PointValue):
-        item_id = f"point_{point.name}"
+        item_id = f"point_{point.name}_{point.register_index}"
         if not self.tree.exists(item_id):
             return
         if isinstance(point.converted_value, float):
