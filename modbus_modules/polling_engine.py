@@ -10,7 +10,7 @@ from __future__ import annotations
 import threading
 import time
 from dataclasses import dataclass, field
-from typing import Any, Callable, Optional
+from typing import Callable, Optional
 
 from modbus_modules.config_parser import AppConfig, GroupConfig, PointConfig
 from modbus_modules.modbus_core import (
@@ -72,6 +72,7 @@ class PollingEngine:
         self._running = False
         self._thread: Optional[threading.Thread] = None
         self._current_group_index = 0
+        self._target_group: Optional[str] = None  # 单组轮循：不为 None 时只轮循该组
         self._lock = threading.Lock()
 
         # 回调: 提供给外部发送 Modbus 请求
@@ -101,8 +102,15 @@ class PollingEngine:
         """加载配置"""
         self._config = config
 
-    def start(self) -> bool:
-        """启动轮循（跳过写组 0x10）"""
+    def set_target_group(self, group_name: Optional[str]) -> None:
+        """设置单组轮循目标，None=轮循所有读组"""
+        self._target_group = group_name
+
+    def start(self, target_group: Optional[str] = None) -> bool:
+        """启动轮循（跳过写组 0x10）
+        Args:
+            target_group: 指定只轮循该组，None=轮循所有读组
+        """
         if self._running:
             return False
 
@@ -118,6 +126,7 @@ class PollingEngine:
         if not enabled_groups:
             return False
 
+        self._target_group = target_group
         self._running = True
         self._current_group_index = 0
         self.total_polls = 0
@@ -139,7 +148,10 @@ class PollingEngine:
             self.on_status_change(False, "轮循已停止")
 
     def _poll_loop(self) -> None:
-        """轮循主循环，每个组使用各自的轮询周期"""
+        """轮循主循环
+        - 如果设置了 target_group，只轮循该组
+        - 否则轮循所有读组（03/04），循环切换
+        """
         config = self._config
         if not config:
             return
@@ -152,7 +164,24 @@ class PollingEngine:
             return
 
         while self._running:
-            group = enabled_groups[self._current_group_index]
+            # 单组模式：只轮循指定的组
+            if self._target_group:
+                group = None
+                for g in enabled_groups:
+                    if g.name == self._target_group:
+                        group = g
+                        break
+                if group is None:
+                    # 目标组不存在或不是读组，等待后重试
+                    time.sleep(0.5)
+                    continue
+            else:
+                # 多组模式：循环切换
+                group = enabled_groups[self._current_group_index]
+                self._current_group_index = (self._current_group_index + 1) % len(
+                    enabled_groups
+                )
+
             result = self._poll_group(group, config.slave_id)
 
             if result:
@@ -167,11 +196,6 @@ class PollingEngine:
 
             # 使用本组的间隔等待
             time.sleep(group.interval_ms / 1000.0)
-
-            # 移动到下一个组
-            self._current_group_index = (self._current_group_index + 1) % len(
-                enabled_groups
-            )
 
     def _poll_group(
         self, group: GroupConfig, slave_id: int

@@ -375,9 +375,24 @@ class ModbusMasterApp:
             messagebox.showerror("", "从站ID须为数字")
             return
 
+        # 获取当前选中的组，只轮循该组
+        selected = self.group_nav.get_selected()
+        if selected:
+            # 检查是否是读组（03/04），写组不能轮循
+            for g in self.app_config.groups:
+                if g.name == selected and g.function_code not in (0x03, 0x04):
+                    messagebox.showwarning(
+                        "",
+                        f"组 '{selected}' 不是读组（FC=0x{g.function_code:02X}），无法轮循",
+                    )
+                    return
+            target = selected
+        else:
+            target = None
+
         self.polling_engine.load_config(self.app_config)
-        if self.polling_engine.start():
-            self._set_msg("▶ 轮循已启动")
+        if self.polling_engine.start(target_group=target):
+            self._set_msg(f"▶ 轮循已启动: {target or '全部读组'}")
             self._update_ui_state()
         else:
             messagebox.showwarning("", "启动失败，检查配置中是否有启用的组")
@@ -592,20 +607,36 @@ class ModbusMasterApp:
             return
         self.data_table.show_group(self.app_config, group_name)
 
-        # 检查是否是写组
+        # 查找该组配置
+        selected_group = None
+        for g in self.app_config.groups:
+            if g.name == group_name:
+                selected_group = g
+                break
+
+        # 检查是否是写组 (FC=0x10)
         self._current_write_group = None
         self.write_btn.config(state="disabled")
         self.read_btn.config(state="disabled")
-        for g in self.app_config.groups:
-            if g.name == group_name and g.function_code == 0x10:
-                self._current_write_group = group_name
-                self.write_btn.config(state="normal")
-                self.read_btn.config(state="normal")
-                # 自动读取当前值（静默模式）
-                self.root.after(100, lambda: self._read_write_group(silent=True))
-                break
 
-        self._set_msg(f"切换到组: {group_name}")
+        if selected_group and selected_group.function_code == 0x10:
+            self._current_write_group = group_name
+            self.write_btn.config(state="normal")
+            self.read_btn.config(state="normal")
+            # 自动读取当前值（静默模式）
+            self.root.after(100, lambda: self._read_write_group(silent=True))
+            # 如果轮循正在运行，暂停轮循
+            if self.polling_engine.is_running:
+                self.polling_engine.stop()
+                self._set_msg("⏸ 写组模式，轮循已暂停")
+        elif selected_group and self.polling_engine.is_running:
+            # 切换到另一个读组，更新轮循目标
+            self.polling_engine.set_target_group(group_name)
+            self._set_msg(f"▶ 轮循切换到组: {group_name}")
+        else:
+            self._set_msg(f"切换到组: {group_name}")
+
+        self._update_ui_state()
 
     # ==================== 手动 Hex 命令 ====================
 

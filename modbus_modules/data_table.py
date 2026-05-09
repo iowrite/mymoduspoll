@@ -38,6 +38,10 @@ class DataTable(ttk.Frame):
         self._current_group: Optional[GroupConfig] = None
         self._edit_entry: Optional[tk.Entry] = None
         self._edit_item: Optional[str] = None
+        self._column_config: list[
+            tuple[str, str, int, str]
+        ] = []  # (id, title, width, anchor)
+        self._column_visible: dict[str, bool] = {}
         self._setup_treeview()
         self._setup_context_menu()
         self._setup_edit_bindings()
@@ -62,7 +66,7 @@ class DataTable(ttk.Frame):
             selectmode="extended",
             height=18,
         )
-        cfg = [
+        self._column_config = [
             ("name", "点位名称", 140, tk.W),
             ("address", "地址", 80, tk.CENTER),
             ("data_type", "数据类型", 78, tk.CENTER),
@@ -74,9 +78,10 @@ class DataTable(ttk.Frame):
             ("value", "转换值", 130, tk.E),
             ("quality", "状态", 68, tk.CENTER),
         ]
-        for col_id, title, width, anchor in cfg:
+        for col_id, title, width, anchor in self._column_config:
             self.tree.heading(col_id, text=title)
             self.tree.column(col_id, width=width, anchor=anchor, minwidth=40)
+            self._column_visible[col_id] = True
 
         vbar = ttk.Scrollbar(self, orient=tk.VERTICAL, command=self.tree.yview)
         hbar = ttk.Scrollbar(self, orient=tk.HORIZONTAL, command=self.tree.xview)
@@ -95,8 +100,46 @@ class DataTable(ttk.Frame):
         self.menu = tk.Menu(self, tearoff=0)
         self.menu.add_command(label="复制选中", command=self._copy_selected)
         self.menu.add_command(label="复制全部", command=self._copy_all)
-        self.tree.bind("<Button-3>", lambda e: self.menu.post(e.x_root, e.y_root))
+        # 列标题右键菜单：选择显示/隐藏列
+        self.col_menu = tk.Menu(self, tearoff=0)
+        self.tree.bind("<Button-3>", self._on_tree_right_click)
         self.tree.bind("<Control-c>", lambda e: self._copy_selected())
+
+    def _on_tree_right_click(self, event):
+        """右键点击：判断点击区域，显示对应菜单"""
+        region = self.tree.identify_region(event.x, event.y)
+        if region == "heading":
+            # 标题区域右键：显示列选择菜单
+            self._show_column_menu(event)
+        else:
+            # 数据区域右键：显示复制菜单
+            self.menu.post(event.x_root, event.y_root)
+
+    def _show_column_menu(self, event):
+        """显示列选择右键菜单"""
+        self.col_menu.delete(0, "end")
+        for col_id, title, width, anchor in self._column_config:
+            visible = self._column_visible.get(col_id, True)
+            prefix = "✓ " if visible else "  "
+            self.col_menu.add_command(
+                label=f"{prefix}{title}",
+                command=lambda c=col_id, w=width: self._toggle_column(c, w),
+            )
+        self.col_menu.post(event.x_root, event.y_root)
+
+    def _toggle_column(self, col_id: str, default_width: int):
+        """切换列的显示/隐藏"""
+        self._column_visible[col_id] = not self._column_visible.get(col_id, True)
+        # 重新构建显示列列表
+        visible_cols = [
+            cid
+            for cid, _, _, _ in self._column_config
+            if self._column_visible.get(cid, True)
+        ]
+        if len(visible_cols) == len(self._column_config):
+            self.tree.configure(displaycolumns=("#all",))
+        else:
+            self.tree.configure(displaycolumns=visible_cols)
 
     def _setup_edit_bindings(self):
         self.tree.bind("<Double-1>", self._on_double_click)
@@ -310,7 +353,6 @@ class DataTable(ttk.Frame):
             self.tree.item(item_id, tags=(f"q_{point.quality}",))
         elif self.tree.item(item_id, "tags") == (f"q_{point.quality}",):
             self.tree.item(item_id, tags=())
-        self.tree.see(item_id)
 
     # ================================================================
     # 工具
