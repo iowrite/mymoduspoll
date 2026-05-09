@@ -14,6 +14,59 @@ from typing import Optional
 from modbus_modules.config_parser import AppConfig, GroupConfig
 from modbus_modules.polling_engine import GroupPollResult, PointValue
 
+
+class ToolTip:
+    """悬浮提示：鼠标悬停在控件上时显示完整文本"""
+
+    def __init__(self, widget):
+        self._widget = widget
+        self._tip_window: Optional[tk.Toplevel] = None
+        self._after_id: Optional[str] = None
+        self._text = ""
+
+    def show_tip(self, text: str, x: int, y: int):
+        """在指定位置显示提示"""
+        self._text = text
+        if self._tip_window:
+            self._tip_window.destroy()
+            self._tip_window = None
+        if not text:
+            return
+        self._tip_window = tw = tk.Toplevel(self._widget)
+        tw.wm_overrideredirect(True)
+        tw.wm_geometry(f"+{x + 15}+{y + 10}")
+        label = tk.Label(
+            tw,
+            text=text,
+            justify=tk.LEFT,
+            background="#FFFFDD",
+            foreground="#333333",
+            relief=tk.SOLID,
+            borderwidth=1,
+            font=("Consolas", 9),
+            padx=6,
+            pady=3,
+            wraplength=500,
+        )
+        label.pack()
+
+    def hide_tip(self):
+        if self._tip_window:
+            self._tip_window.destroy()
+            self._tip_window = None
+        self._text = ""
+
+    def schedule(self, text: str, x: int, y: int, delay_ms: int = 400):
+        """延时显示提示，避免频繁闪烁"""
+        self.cancel()
+        self._after_id = self._widget.after(delay_ms, lambda: self.show_tip(text, x, y))
+
+    def cancel(self):
+        if self._after_id:
+            self._widget.after_cancel(self._after_id)
+            self._after_id = None
+
+
 QUALITY_COLORS = {
     "good": "",
     "error": "#FFCCCC",
@@ -45,6 +98,7 @@ class DataTable(ttk.Frame):
         self._setup_treeview()
         self._setup_context_menu()
         self._setup_edit_bindings()
+        self._setup_tooltip()
 
     def _setup_treeview(self):
         columns = (
@@ -140,6 +194,31 @@ class DataTable(ttk.Frame):
             self.tree.configure(displaycolumns=("#all",))
         else:
             self.tree.configure(displaycolumns=visible_cols)
+
+    def _setup_tooltip(self):
+        """悬浮提示：鼠标悬停时显示单元格完整文本"""
+        self._tooltip = ToolTip(self.tree)
+        self.tree.bind("<Motion>", self._on_mouse_move)
+        self.tree.bind("<Leave>", lambda e: self._tooltip.hide_tip())
+
+    def _on_mouse_move(self, event):
+        """鼠标移动时检测悬停的单元格，显示完整文本"""
+        item = self.tree.identify_row(event.y)
+        col = self.tree.identify_column(event.x)
+        if not item or not col:
+            self._tooltip.hide_tip()
+            return
+        col_index = int(col.replace("#", "")) - 1
+        values = self.tree.item(item, "values")
+        if col_index < len(values):
+            text = values[col_index]
+            # 文本超过8个字符时显示悬浮提示
+            if text and len(text) > 8:
+                self._tooltip.schedule(text, event.x_root, event.y_root)
+            else:
+                self._tooltip.hide_tip()
+        else:
+            self._tooltip.hide_tip()
 
     def _setup_edit_bindings(self):
         self.tree.bind("<Double-1>", self._on_double_click)
