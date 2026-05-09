@@ -241,8 +241,6 @@ class DataTable(ttk.Frame):
         for point in group.points:
             idx = point.register_index
             dtype = point.data_type
-            if point.signed and dtype == "uint16":
-                dtype = "int16"
             scale_str = f"{point.scale:g}" if point.scale != 1.0 else "1"
             offset_str = f"{point.offset:g}" if point.offset != 0 else "0"
             hint = "双击编辑" if group.function_code == 0x10 else "---"

@@ -77,17 +77,17 @@ class PointConfig:
 
 
 # 点位数组格式的字段顺序（一行一个数组时按此位置映射）
-# 写法: [名称, 索引, 有符号, 倍率, 偏移, 单位, 小数位, 数据类型, 说明]
+# 写法: [名称, 索引, 倍率, 偏移, 单位, 小数位, 数据类型, 说明]
+# 注意: signed(有符号) 从 data_type 自动推断 (int16/int32 → True, uint16/uint32 → False)
 POINT_ARRAY_FIELDS = [
     "name",  # 0
     "register_index",  # 1
-    "signed",  # 2
-    "scale",  # 3
-    "offset",  # 4
-    "unit",  # 5
-    "decimals",  # 6
-    "data_type",  # 7
-    "description",  # 8
+    "scale",  # 2
+    "offset",  # 3
+    "unit",  # 4
+    "decimals",  # 5
+    "data_type",  # 6
+    "description",  # 7
 ]
 
 
@@ -233,31 +233,39 @@ def parse_config_dict(raw: dict) -> AppConfig:
     return config
 
 
+def _infer_signed_from_data_type(data_type: str) -> bool:
+    """从数据类型推断是否有符号"""
+    return data_type.lower().startswith("int")
+
+
 def _parse_point_array(arr: list[Any]) -> PointConfig:
     """
     从数组解析点位配置
 
     数组格式（按 POINT_ARRAY_FIELDS 顺序）:
-        [name, register_index, signed, scale, offset, unit, decimals, data_type, description]
+        [name, register_index, scale, offset, unit, decimals, data_type, description]
 
     示例:
-        ["温度1", 0, true, 0.1, 0, "°C", 1, "int16", "传感器1号"]
-        ["状态字", 0, false, 1, 0, "", 0, "uint16"]
+        ["温度1", 0, 0.1, 0, "°C", 1, "int16", "传感器1号"]
+        ["状态字", 0, 1, 0, "", 0, "uint16"]
+
+    注意: signed(有符号) 从 data_type 自动推断
     """
     fields = {}
     for i, field_name in enumerate(POINT_ARRAY_FIELDS):
         if i < len(arr):
             fields[field_name] = arr[i]
 
+    data_type = str(fields.get("data_type", "uint16"))
     return PointConfig(
         name=str(fields.get("name", f"点_{fields.get('register_index', 0)}")),
         register_index=int(fields.get("register_index", 0)),
-        signed=bool(fields.get("signed", False)),
+        signed=_infer_signed_from_data_type(data_type),
         scale=float(fields.get("scale", 1.0)),
         offset=float(fields.get("offset", 0.0)),
         unit=str(fields.get("unit", "")),
         decimals=int(fields.get("decimals", 0)),
-        data_type=str(fields.get("data_type", "uint16")),
+        data_type=data_type,
         description=str(fields.get("description", "")),
     )
 
@@ -290,10 +298,10 @@ def generate_example_config() -> str:
                 "start_address": 0,
                 "quantity": 4,
                 "points": [
-                    ["通道1温度", 0, True, 0.1, 0, "°C", 1, "int16"],
-                    ["通道2温度", 1, True, 0.1, 0, "°C", 1, "int16"],
-                    ["通道3温度", 2, True, 0.1, 0, "°C", 1, "int16"],
-                    ["通道4温度", 3, True, 0.1, 0, "°C", 1, "int16"],
+                    ["通道1温度", 0, 0.1, 0, "°C", 1, "int16"],
+                    ["通道2温度", 1, 0.1, 0, "°C", 1, "int16"],
+                    ["通道3温度", 2, 0.1, 0, "°C", 1, "int16"],
+                    ["通道4温度", 3, 0.1, 0, "°C", 1, "int16"],
                 ],
             },
             {
@@ -302,8 +310,8 @@ def generate_example_config() -> str:
                 "start_address": 0,
                 "quantity": 2,
                 "points": [
-                    ["电压L1", 0, False, 0.1, 0, "V", 1, "uint16"],
-                    ["电压L2", 1, False, 0.1, 0, "V", 1, "uint16"],
+                    ["电压L1", 0, 0.1, 0, "V", 1, "uint16"],
+                    ["电压L2", 1, 0.1, 0, "V", 1, "uint16"],
                 ],
             },
             {
@@ -312,8 +320,8 @@ def generate_example_config() -> str:
                 "start_address": 100,
                 "quantity": 2,
                 "points": [
-                    ["总运行时间", 0, False, 1, 0, "小时", 0, "uint32"],
-                    ["累计产量", 1, False, 1, 0, "个", 0, "uint32"],
+                    ["总运行时间", 0, 1, 0, "小时", 0, "uint32"],
+                    ["累计产量", 1, 1, 0, "个", 0, "uint32"],
                 ],
             },
         ],

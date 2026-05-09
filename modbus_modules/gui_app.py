@@ -117,7 +117,6 @@ class ModbusMasterApp:
         self.root.config(menu=menubar)
         fm = tk.Menu(menubar, tearoff=0)
         menubar.add_cascade(label="文件", menu=fm)
-        fm.add_command(label="加载配置", command=self.load_config_dialog)
         fm.add_command(label="🔍 数据监控", command=self.open_data_monitor)
         fm.add_separator()
         fm.add_command(label="退出", command=self.on_closing)
@@ -236,9 +235,6 @@ class ModbusMasterApp:
         ttk.Button(hex_frame, text="解析", command=self.parse_clipboard, width=6).pack(
             side=tk.LEFT, padx=1
         )
-        ttk.Button(
-            hex_frame, text="🔍 监控", command=self.open_data_monitor, width=8
-        ).pack(side=tk.LEFT, padx=3)
 
         # 第2小行：状态日志（单行）
         self.msg_var = tk.StringVar(value="就绪")
